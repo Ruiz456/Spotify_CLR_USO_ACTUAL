@@ -12,6 +12,13 @@ void prueba2()
 {
     cout << "prueba 02" << endl;
 }
+
+void prueba3
+()
+{
+    cout << "vamos con la prueba 3" << endl;
+}
+
 int main()
 {
     return 0;
