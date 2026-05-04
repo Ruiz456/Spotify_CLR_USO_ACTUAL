@@ -6,7 +6,7 @@ using namespace std;
 void prueba1()
 {
     cout << " prueba fdsdfdsf" << endl;
-
+    cout << "Hola";
 }
 
 void prueba2()
