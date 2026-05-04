@@ -12,6 +12,7 @@ void prueba1()
 void prueba2()
 {
     cout << "prueba 02" << endl;
+    cout << "HI";
 }
 
 void prueba3
