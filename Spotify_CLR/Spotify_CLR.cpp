@@ -155,10 +155,11 @@ int main()
             for (int i = 0; i < 15; i++)
                 Console::WriteLine(gcnew String(matriz[i].c_str()));
 
-            string canciones[3] = {
+            string canciones[4] = {
                 "Blinding Lights",
                 "Save Your Tears",
-                "Starboy"
+                "Starboy",
+                "Labyrinth"
             };
 
             Buscador::dibujarResultados(canciones, 3, 4, 4);
