@@ -126,10 +126,29 @@
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Album.h" />
+    <ClInclude Include="Artista.h" />
+    <ClInclude Include="BibliotecaMusical.h" />
+    <ClInclude Include="Buscador.h" />
+    <ClInclude Include="Cancion.h" />
+    <ClInclude Include="ColaReproduccion.h" />
+    <ClInclude Include="Favoritos.h" />
+    <ClInclude Include="FiltroCanciones.h" />
+    <ClInclude Include="GestorPlaylists.h" />
+    <ClInclude Include="GestorUsuarios.h" />
+    <ClInclude Include="Header.h" />
+    <ClInclude Include="HistorialReproduccion.h" />
+    <ClInclude Include="Lista.h" />
+    <ClInclude Include="MotorRecomendacion.h" />
+    <ClInclude Include="Nodo.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="Playlist.h" />
+    <ClInclude Include="Reproductor.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="Usuario.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Album.cpp" />
     <ClCompile Include="AssemblyInfo.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
