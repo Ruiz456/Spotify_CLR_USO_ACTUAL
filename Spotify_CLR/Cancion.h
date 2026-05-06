@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 #include <iostream>
 #include <string>
@@ -17,6 +17,10 @@ private:
     // una txt donde se almacena todas las canciones
     Lista<Cancion*>* lst_canciones = new Lista<Cancion*>();
 
+
+    // almancenCanciones.txt
+    string almacenCanciones = "almacenCanciones.txt";
+
 public:
     // Constructor
     Cancion(string titulo = "", string genero = "", float duracion = 0, string artista = "") {
@@ -24,6 +28,9 @@ public:
         this->genero = genero;
         this->duracion = duracion;
         this->artista = artista;
+
+        // creamos el almacenCanciones.txt (es un almacen de todas las canciones del mundo)
+        crearArchivoSiNoExiste(almacenCanciones);
     }
 
     // Getters
@@ -38,29 +45,9 @@ public:
     void setDuracion(float d) { duracion = d; }
     void setArtista(string a) { artista = a; }
 
-    // Mostrar info
-
-    //////////////////////////////////////////////////////
-    ////////////ELIMINAMOS ESTO: mostrar//////////////////
-    //////////////////////////////////////////////////////
-    void mostrar() const {
-        cout << "Titulo: " << titulo << endl;
-        cout << "Artista: " << artista << endl;
-        cout << "Genero: " << genero << endl;
-        cout << "Duracion: " << duracion << " min" << endl;
-        cout << "------------------------" << endl;
-    }
 
 
-    // Operador de comparaci�n (para Lista<T>)
-    bool operator==(const Cancion& c) const {
-        return this->titulo == c.titulo;
-    }
 
-
-    ///////////////////////////////////////////////////
-    ////////////LO CAMBIAMOS POR ESTO//////////////////
-    ///////////////////////////////////////////////////
     void mostrarCanciones()
     {
         int i = 0;
@@ -92,7 +79,6 @@ public:
         archivo.close();
     }
 
-
     void guardarCanciones(Lista<Cancion*>* lista, string nombreArchivo)
     {
         ofstream archivo(nombreArchivo);
@@ -120,4 +106,52 @@ public:
         }
     }
 
+
+    // Para agregar en la base de datos de almacenCanciones.txt
+    void agregarCancion(string titulo, string artista, string genero, float duracion = 0)
+    {
+        Cancion* c = new Cancion(titulo, genero, duracion, artista);
+        lst_canciones->agregarFinal(c);
+
+        // ✅ Guarda automáticamente en almacenCanciones.txt
+        ofstream archivo(almacenCanciones, ios::app);
+        archivo << titulo << "|" << artista << "|" << genero << "\n";
+        archivo.close();
+    }
+
+    
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    // PARA MOSTRAS//// PARA PRUEBAS
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    void cargarCancionesDesdeArchivo()
+    {
+        ifstream archivo(almacenCanciones);
+
+        if (!archivo.is_open()) {
+            cout << "No se pudo abrir: " << almacenCanciones << endl;
+            return;
+        }
+
+        string linea;
+        while (getline(archivo, linea))
+        {
+            if (linea.empty()) continue;
+
+            int pos1 = linea.find('|');
+            int pos2 = linea.find('|', pos1 + 1);
+
+            string titulo = linea.substr(0, pos1);
+            string artista = linea.substr(pos1 + 1, pos2 - pos1 - 1);
+            string genero = linea.substr(pos2 + 1);
+
+            Cancion* c = new Cancion(titulo, genero, 0, artista);
+            lst_canciones->agregarFinal(c);
+        }
+
+        archivo.close();
+    }
 };

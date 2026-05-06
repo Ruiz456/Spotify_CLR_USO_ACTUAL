@@ -44,6 +44,8 @@ public:
             });
     }
 
+
+    // CON ESTO DETERMINAMOS LA UBICACION(x,y) DEL TEXTO QUE SE QUIERE AGREGAR
     static void dibujarResultados(string canciones[], int cantidad, int x, int y)
     {
         for (int i = 0; i < cantidad; i++)

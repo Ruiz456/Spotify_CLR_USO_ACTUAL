@@ -1,3 +1,5 @@
+﻿// Spotify_CLR.cpp -> el main principal
+
 #include "pch.h"
 #include <iostream>
 #include <windows.h>
