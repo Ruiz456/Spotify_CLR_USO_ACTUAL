@@ -1,3 +1,5 @@
+﻿// Spotify_CLR.cpp -> el main principal
+
 #include "pch.h"
 #include <iostream>
 #include <windows.h>
@@ -103,6 +105,7 @@ int ProcesarMouse(HANDLE hIn)
     return -1;
 }
 
+
 int main()
 {
     HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
@@ -117,10 +120,84 @@ int main()
 
     Console::Clear();
 
-    AgregarOpcion("Inicio", 5, 5, 10);
-    AgregarOpcion("Buscar", 18, 5, 20);
-    AgregarOpcion("Playlists", 31, 5, 30);
 
+
+    string matriz[40] = {
+    "+----------------------------------------------------------++----------------------------------------------------------+",
+    "|                                                          || Buscar                                                   |",
+    "|                                                          || Ingrese lo que quiere buscar:                            |",
+    "|                                                          || -------------------------------------------------------- |",
+    "|                                                          || Resultados principales                                   |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "+----------------------------------------------------------++----------------------------------------------------------+",
+    "+----------------------------------------------------------++----------------------------------------------------------+",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "|                                                          ||                                                          |",
+    "+----------------------------------------------------------++----------------------------------------------------------+"
+    };
+    /*
+    for (int i = 0; i < 40; i++)
+        Console::WriteLine(gcnew String(matriz[i].c_str()));
+
+    // Datos de ejemplo
+    string canciones[6] = {
+        "Blinding Lights",
+        "Save Your Tears",
+        "Starboy",
+        "Labyrinth",
+        "Show Time",
+        "Ya fue"
+    };
+
+    
+
+    // Opciones clickeables (canciones)
+    for (int i = 0; i < 6; i++)
+    {
+        // CON ESTO DETERMINAMOS LA UBICACION(x,y) DEL TEXTO QUE SE QUIERE AGREGAR
+        //                        ( x ,   y  )
+        AgregarOpcion(canciones[i], 63, 6 + i, i + 1);
+    }
+    */
+
+    // ============================================================
+    //  PRUEBA PARA MOSTRAR LA BASE DE DATOS DE CANCION PRINCIPAL
+    // ============================================================
+    Cancion gestorCanciones;
+
+    gestorCanciones.cargarCancionesDesdeArchivo();
+    gestorCanciones.mostrarCanciones();
+
+    //----------------------------------------------------------
     while (true)
     {
         int accion = ProcesarMouse(hIn);
@@ -129,51 +206,7 @@ int main()
             Console::SetCursorPosition(5, 8);
             Console::Write("Click en Inicio       ");
         }
-        else if (accion == 20) {
-            Console::Clear();
 
-            opciones.clear();
-
-            string matriz[15] = {
-                "+----------------------------------------------------------+",
-                "| Buscar                                                   |",
-                "| Ingrese lo que quiere buscar:                            |",
-                "| -------------------------------------------------------- |",
-                "| Resultados principales                                   |",
-                "|                                                          |",
-                "|                                                          |",
-                "|                                                          |",
-                "|                                                          |",
-                "|                                                          |",
-                "|                                                          |",
-                "|                                                          |",
-                "|                                                          |",
-                "|  Esc: Volver    Click: Seleccionar                       |",
-                "+----------------------------------------------------------+"
-            };
-
-            for (int i = 0; i < 15; i++)
-                Console::WriteLine(gcnew String(matriz[i].c_str()));
-
-            string canciones[6] = {
-                "Blinding Lights",
-                "Save Your Tears",
-                "Starboy",
-                "Labyrinth",
-                "Show Time",
-                "Ya fue"
-            };
-
-            Buscador::dibujarResultados(canciones, 3, 4, 4);
-
-            for (int i = 0; i < 3; i++)
-            {
-                AgregarOpcion(canciones[i], 4, 4 + i, i + 1);
-            }
-            AgregarOpcion("Buscar musica", 2, 1, 10);
-
-
-        }
         else if (accion == 30) {
             Console::SetCursorPosition(5, 8);
             Console::Write("Click en Playlists    ");
