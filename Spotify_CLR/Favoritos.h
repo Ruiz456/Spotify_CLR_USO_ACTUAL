@@ -28,13 +28,14 @@ public:
         favoritas = nueva;
     }
 
-    // Mostrar favoritos
+    // Mostrar favoritos (LIFO)
     void mostrar() {
         cout << "Canciones favoritas:" << endl;
 
-        favoritas.recorrer([](Cancion c) {
-            cout << "- " << c.getTitulo() << endl;
-            });
+        for (int i = favoritas.longitud() - 1; i >= 0; i--) {
+            Cancion c = favoritas.obtenerPos(i);
+            cout << "- " << c.getTitulo() << " | " << c.getArtista() << endl;
+        }
     }
 
     // Verificar si está en favoritos
