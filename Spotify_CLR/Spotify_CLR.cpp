@@ -68,33 +68,14 @@ void    reanudarReproduccion();
 void    siguienteCancion();
 void    cancionAnterior();
 void    cambiarVolumen(int delta);
-// -- Algoritmos --
-void    mezclarCancionesConFisherYates(Lista<Cancion>* lista);
-void    ordenarCancionesConBubbleSort(Lista<Cancion>* lista);
-// -- Busqueda --
-Lista<Cancion>* buscarCancionesPorTitulo(Lista<Cancion>* canciones, string titulo);
-Lista<Cancion>* buscarCancionesPorArtista(Lista<Cancion>* canciones, string artista);
-Lista<Cancion>* buscarCancionesPorGenero(Lista<Cancion>* canciones, string genero);
-// -- Favoritos --
-bool    agregarAFavoritos(Usuario* usuario, Cancion cancion);
-bool    eliminarDeFavoritos(Usuario* usuario, Cancion cancion);
-bool    esCancionFavorita(Usuario* usuario, Cancion cancion);
-// -- Playlists --
-bool    crearPlaylist(Usuario* usuario, string nombre);
-bool    agregarCancionAPlaylist(Usuario* usuario, string nombrePlaylist, Cancion cancion);
-bool    eliminarCancionDePlaylist(Usuario* usuario, string nombrePlaylist, string tituloCancion);
 // -- Usuarios --
-bool    verificarUsuarioExiste(string nombre);
 bool    crearNuevoUsuario(string nombre, string email);
 Usuario* loginUsuario(string nombre);
 // -- Disco --
 void    crearEstructuraCarpetas();
 bool    cargarAlmacenCanciones(Lista<Cancion>* canciones);
-bool    cargarUsuariosDelDisco(Lista<Usuario>* usuarios);
 bool    cargarAlbumesDelDisco(Lista<Album>* albumes);
-bool    guardarUsuarioADisco(Usuario* usuario);
-bool    guardarPlaylistADisco(Usuario* usuario, Playlist playlist);
-bool    guardarFavoritosADisco(Usuario* usuario);
+void    guardarADisco(Usuario* usuario);
 // -- Pantallas --
 int     mostrarPantallaInicio();
 int     mostrarPantallaLogin();
@@ -107,14 +88,26 @@ void    mostrarTabAlbumes();
 void    mostrarTabArtistas();
 void    mostrarTabFavoritos(Usuario* usuarioActual);
 void    mostrarTabConfiguracion(Usuario* usuarioActual);
+void    mostrarDetallePlaylist(Usuario* usuarioActual, string nombrePL);
 
 // ============================================================
 // UTILIDADES DE UI  (no cuentan en las 36 funciones)
 // ============================================================
 
-void gotoxy(int x, int y) { Console::SetCursorPosition(x, y); }
+// Filas validas: 0 a MAX_ROW (console buffer = 36 filas → 0..35)
+static const int MAX_ROW = 35;
+static const int MAX_COL = 99;
+
+void gotoxy(int x, int y) {
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > MAX_COL) x = MAX_COL;
+    if (y > MAX_ROW) y = MAX_ROW;
+    Console::SetCursorPosition(x, y);
+}
 
 void Imprimir(int x, int y, string txt, ConsoleColor color = ConsoleColor::White) {
+    if (y < 0 || y > MAX_ROW) return;   // fila fuera de rango: ignorar silenciosamente
     gotoxy(x, y);
     Console::ForegroundColor = color;
     Console::Write(gcnew String(txt.c_str()));
@@ -157,27 +150,107 @@ string LeerTextoSinIgnore(int x, int y, string etiqueta) {
 }
 
 int MenuFlechas(vector<OpcionMenu>& opciones, int x, int y, string titulo = "") {
-    int sel = 0;
-    int n = (int)opciones.size();
+    int sel   = 0;
+    int n     = (int)opciones.size();
+    if (n == 0) return -1;
+
+    // Cuantas filas hay desde y hasta la fila 27 (la 28 es footer de cada tab)
+    int maxVisible = 27 - y + 1;          // ej: y=6 → maxVisible=22
+    if (maxVisible < 1)  maxVisible = 1;
+    if (maxVisible > n)  maxVisible = n;
+
+    int offset = 0;   // primer indice visible
+
     if (titulo != "") Imprimir(x, y - 2, titulo, ConsoleColor::Yellow);
 
+    // Limpia la zona del menu antes de dibujar
+    string blancos(50, ' ');
+    auto limpiarMenu = [&]() {
+        for (int i = 0; i < maxVisible + 2; i++)
+            Imprimir(x, y - 1 + i, blancos);
+    };
+
     auto dibujar = [&]() {
-        for (int i = 0; i < n; i++) {
-            if (i == sel)
-                Imprimir(x, y + i, "> " + opciones[i].texto, ConsoleColor::Green);
+        limpiarMenu();
+        // Indicador "mas arriba"
+        if (offset > 0)
+            Imprimir(x, y - 1, "  ^ mas resultados ^", ConsoleColor::DarkGray);
+
+        for (int i = 0; i < maxVisible; i++) {
+            int idx = offset + i;
+            if (idx >= n) break;
+            string linea = Truncar(opciones[idx].texto, 46);
+            if (idx == sel)
+                Imprimir(x, y + i, "> " + linea, ConsoleColor::Green);
             else
-                Imprimir(x, y + i, "  " + opciones[i].texto + "  ", ConsoleColor::White);
+                Imprimir(x, y + i, "  " + linea, ConsoleColor::White);
         }
-        };
+
+        // Indicador "mas abajo"
+        if (offset + maxVisible < n)
+            Imprimir(x, y + maxVisible, "  v mas resultados v", ConsoleColor::DarkGray);
+    };
+
     dibujar();
 
     while (true) {
         ConsoleKeyInfo t = Console::ReadKey(true);
-        if (t.Key == ConsoleKey::UpArrow) { sel = (sel - 1 + n) % n; dibujar(); }
-        else if (t.Key == ConsoleKey::DownArrow) { sel = (sel + 1) % n;     dibujar(); }
-        else if (t.Key == ConsoleKey::Enter)       return opciones[sel].id;
-        else if (t.Key == ConsoleKey::Escape)      return -1;
+
+        if (t.Key == ConsoleKey::UpArrow) {
+            if (sel > 0) {
+                sel--;
+                if (sel < offset) offset = sel;
+                dibujar();
+            }
+        }
+        else if (t.Key == ConsoleKey::DownArrow) {
+            if (sel < n - 1) {
+                sel++;
+                if (sel >= offset + maxVisible) offset = sel - maxVisible + 1;
+                dibujar();
+            }
+        }
+        else if (t.Key == ConsoleKey::Enter)  return opciones[sel].id;
+        else if (t.Key == ConsoleKey::Escape) return -1;
     }
+}
+
+// -- Helpers reutilizables --
+
+// Maneja flechas <- -> para cambiar tab y Q para logout. Retorna true si el tab debe retornar.
+bool ManejarNavTab(ConsoleKeyInfo t) {
+    if (t.Key == ConsoleKey::LeftArrow)  { gTabActual = (gTabActual + 6) % 7; return true; }
+    if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return true; }
+    if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return true; }
+    return false;
+}
+
+// Carga canciones en la cola global desde 'desde' y reproduce la primera.
+void reproducirDesde(Lista<Cancion>* fuente, int desde) {
+    delete gColaActual;
+    gColaActual = new Lista<Cancion>();
+    gIndiceActual = 0;
+    for (int i = desde; i < (int)fuente->longitud(); i++)
+        gColaActual->agregarFinal(fuente->obtenerPos(i));
+    iniciarReproduccion(fuente->obtenerPos(desde));
+}
+
+// Muestra menu con canciones de una lista. Retorna indice elegido o -1.
+int MenuSeleccionCancion(Lista<Cancion>* lista, string titulo) {
+    LimpiarZona(23, 3, 75, 28);
+    vector<OpcionMenu> ops;
+    int idx = 0;
+    lista->recorrer([&](Cancion c) {
+        ops.push_back({ Truncar(c.getTitulo(), 28) + " - " + Truncar(c.getArtista(), 18), idx++ });
+    });
+    ops.push_back({ "Cancelar", -1 });
+    return MenuFlechas(ops, 26, 6, titulo);
+}
+
+// Muestra menu SI/NO. Retorna true si el usuario eligio SI.
+bool MenuConfirmacion(int x, int y, string pregunta) {
+    vector<OpcionMenu> ops = { {"SI", 1}, {"NO, cancelar", 0} };
+    return MenuFlechas(ops, x, y, pregunta) == 1;
 }
 
 // Dibuja el marco persistente (header + tabs + panel izq + footer)
@@ -273,31 +346,10 @@ bool ManejarTeclaGlobal(ConsoleKeyInfo t, Usuario* u) {
 }
 
 // ============================================================
-// ============================================================
-//   FUNCIONES REQUERIDAS  (total: 37)
-// ============================================================
+// FUNCIONES PRINCIPALES
 // ============================================================
 
-
-// ============================================================
-// BLOQUE 1: PANTALLAS (11 funciones)
-// ============================================================
-
-/*
- * Funcion: mostrarPantallaInicio()
- * Proposito: Mostrar el menu inicial con opciones LOGIN, REGISTRO y SALIR.
- *            Es la primera pantalla que ve el usuario al abrir la app.
- * Parametros: void
- * Retorno: int  0=LOGIN  1=REGISTRO  2=SALIR
- *
- * Elementos mostrados:
- *   - Logo ASCII de SPOTIFY EN CONSOLA
- *   - Tres opciones navegables con flechas
- *
- * Ejemplo:
- *   int op = mostrarPantallaInicio();
- *   if (op == 0) mostrarPantallaLogin();
- */
+// Pantalla inicial: LOGIN(0), REGISTRO(1) o SALIR(2)
 int mostrarPantallaInicio() {
     Console::Clear();
     Console::SetWindowSize(100, 36);
@@ -319,23 +371,7 @@ int mostrarPantallaInicio() {
     return MenuFlechas(opciones, 38, 13, "Selecciona una opcion:");
 }
 
-/*
- * Funcion: mostrarPantallaLogin()
- * Proposito: Solicitar el nombre de usuario y validarlo contra el disco.
- *            Carga todos los datos del usuario (playlists, favoritos).
- *            Si el login es exitoso, asigna gUsuarioActual.
- * Parametros: void
- * Retorno: int  1=exito  0=fallo o cancelado
- *
- * Operaciones internas:
- *   1. Solicitar nombre de usuario
- *   2. Verificar con verificarUsuarioExiste()
- *   3. Si existe: llamar loginUsuario() y asignar gUsuarioActual
- *   4. Mostrar resultado
- *
- * Ejemplo:
- *   if (mostrarPantallaLogin() == 1) mostrarMenuPrincipal(gUsuarioActual);
- */
+// Login: solicita nombre, valida, carga datos. Retorna 1=exito, 0=fallo
 int mostrarPantallaLogin() {
     Console::Clear();
     Imprimir(30, 2, string(42, '='), ConsoleColor::Green);
@@ -346,7 +382,7 @@ int mostrarPantallaLogin() {
 
     if (nombre.empty()) return 0;
 
-    if (!verificarUsuarioExiste(nombre)) {
+    if (!gGestor.existeNombre(nombre)) {
         Imprimir(30, 9, "Usuario no encontrado.", ConsoleColor::Red);
         Imprimir(30, 11, "Presiona ENTER para volver...", ConsoleColor::DarkGray);
         while (Console::ReadKey(true).Key != ConsoleKey::Enter) {}
@@ -370,23 +406,7 @@ int mostrarPantallaLogin() {
     return 1;
 }
 
-/*
- * Funcion: mostrarPantallaRegistro()
- * Proposito: Solicitar nombre y email para crear una cuenta nueva.
- *            Valida que el nombre no exista ya en el sistema.
- *            Tras registrar, asigna gUsuarioActual para entrar directo al menu.
- * Parametros: void
- * Retorno: int  1=exito  0=fallo o cancelado
- *
- * Operaciones internas:
- *   1. Solicitar nombre y email
- *   2. Verificar que el nombre no exista (verificarUsuarioExiste)
- *   3. Crear usuario (crearNuevoUsuario)
- *   4. Hacer login automatico (loginUsuario)
- *
- * Ejemplo:
- *   if (mostrarPantallaRegistro() == 1) mostrarMenuPrincipal(gUsuarioActual);
- */
+// Registro: solicita nombre/email, crea cuenta y login automatico. Retorna 1=exito, 0=fallo
 int mostrarPantallaRegistro() {
     Console::Clear();
     Imprimir(30, 2, string(42, '='), ConsoleColor::Green);
@@ -396,7 +416,7 @@ int mostrarPantallaRegistro() {
     string nombre = LeerTextoSinIgnore(30, 7, "Nombre de usuario: ");
     if (nombre.empty()) return 0;
 
-    if (verificarUsuarioExiste(nombre)) {
+    if (gGestor.existeNombre(nombre)) {
         Imprimir(30, 9, "Ese nombre ya esta en uso. Elige otro.", ConsoleColor::Red);
         Imprimir(30, 11, "Presiona ENTER para volver...", ConsoleColor::DarkGray);
         while (Console::ReadKey(true).Key != ConsoleKey::Enter) {}
@@ -429,25 +449,7 @@ int mostrarPantallaRegistro() {
     return 1;
 }
 
-/*
- * Funcion: mostrarMenuPrincipal()
- * Proposito: Mostrar el menu principal con 7 tabs navegables.
- *            Dibuja el marco persistente (header, reproductor, footer)
- *            y delega el contenido al tab activo.
- *            Loop hasta que el usuario presione Q (logout).
- * Parametros:
- *   - Usuario* usuarioActual: puntero al usuario con sesion iniciada
- * Retorno: void
- *
- * Navegacion:
- *   <- -> : cambiar tab
- *   P N B +/- : controles del reproductor
- *   Q        : logout y guardar datos
- *
- * Ejemplo:
- *   mostrarMenuPrincipal(gUsuarioActual);
- */
-
+// Menu principal: loop de 7 tabs, dibuja shell y delega al tab activo. Q=logout.
 void mostrarMenuPrincipal(Usuario* usuarioActual) {
     gMenuActivo = true;
     gTabActual = 0;
@@ -466,36 +468,16 @@ void mostrarMenuPrincipal(Usuario* usuarioActual) {
         }
     }
 
-    guardarUsuarioADisco(usuarioActual);
+    guardarADisco(usuarioActual);
 }
 
-/*
- * Funcion: mostrarTabBiblioteca()
- * Proposito: Mostrar todas las canciones del almacen global agrupadas por genero.
- *            Permite reproducir una cancion seleccionada con ENTER.
- *            Tambien permite agregar a favoritos con F o a playlist con A.
- * Parametros:
- *   - Usuario* usuarioActual: usuario en sesion (para favoritos/playlists)
- * Retorno: void
- *
- * Navegacion:
- *   UP/DOWN: moverse por canciones
- *   ENTER  : reproducir cancion seleccionada
- *   F      : agregar/quitar de favoritos
- *   A      : agregar a playlist
- *   <- ->  : cambiar tab
- *
- * Ejemplo:
- *   mostrarTabBiblioteca(usuarioActual);
- */
+// Tab Biblioteca: lista todas las canciones. ENTER=reproducir, F=favorito, A=agregar a playlist
 void mostrarTabBiblioteca(Usuario* usuarioActual) {
     if (!gCanciones || gCanciones->esVacia()) {
         Imprimir(24, 4, "Sin canciones. Agregue datos en almacenCanciones.txt", ConsoleColor::DarkGray);
         while (true) {
             ConsoleKeyInfo t = Console::ReadKey(true);
-            if (t.Key == ConsoleKey::LeftArrow)  { gTabActual = (gTabActual + 6) % 7; return; }
-            if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return; }
-            if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return; }
+            if (ManejarNavTab(t)) return;
         }
     }
 
@@ -517,7 +499,7 @@ void mostrarTabBiblioteca(Usuario* usuarioActual) {
             string linea = Truncar(c.getTitulo(), 28) + " - " + Truncar(c.getArtista(), 18)
                 + "  [" + Truncar(c.getGenero(), 10) + "]";
 
-            bool esFav = esCancionFavorita(usuarioActual, c);
+            bool esFav = usuarioActual->getFavoritos().esFavorita(c.getTitulo());
             string fav = esFav ? " <3" : "   ";
 
             if (i == sel)
@@ -535,29 +517,19 @@ void mostrarTabBiblioteca(Usuario* usuarioActual) {
 
         if (t.Key == ConsoleKey::UpArrow) { if (sel > 0) sel--; }
         else if (t.Key == ConsoleKey::DownArrow) { if (sel < total - 1) sel++; }
-        else if (t.Key == ConsoleKey::LeftArrow) { gTabActual = (gTabActual + 6) % 7; return; }
-        else if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return; }
-        else if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return; }
+        else if (ManejarNavTab(t)) return;
 
         else if (t.Key == ConsoleKey::Enter) {
-            Cancion c = gCanciones->obtenerPos(sel);
-            delete gColaActual;
-            gColaActual = new Lista<Cancion>();
-            gIndiceActual = 0;
-            // cargar todas las canciones desde sel en adelante
-            for (int i = sel; i < total; i++)
-                gColaActual->agregarFinal(gCanciones->obtenerPos(i));
-            iniciarReproduccion(c);
+            reproducirDesde(gCanciones, sel);
             DibujarShell(usuarioActual);
         }
         else if ((char)tolower((int)t.KeyChar) == 'f') {
             Cancion c = gCanciones->obtenerPos(sel);
-            if (esCancionFavorita(usuarioActual, c))
-                eliminarDeFavoritos(usuarioActual, c);
+            if (usuarioActual->getFavoritos().esFavorita(c.getTitulo()))
+                usuarioActual->eliminarFavorito(c.getTitulo());
             else
-                agregarAFavoritos(usuarioActual, c);
-            guardarFavoritosADisco(usuarioActual);
-            DibujarShell(usuarioActual);
+                usuarioActual->agregarFavorito(c);
+            guardarADisco(usuarioActual);
         }
         else if ((char)tolower((int)t.KeyChar) == 'a') {
             // Agregar a playlist
@@ -578,8 +550,8 @@ void mostrarTabBiblioteca(Usuario* usuarioActual) {
                 if (elegida >= 0) {
                     string nombrePL = usuarioActual->getPlaylists().obtenerPos(elegida).getNombre();
                     Cancion c = gCanciones->obtenerPos(sel);
-                    agregarCancionAPlaylist(usuarioActual, nombrePL, c);
-                    guardarPlaylistADisco(usuarioActual, usuarioActual->getPlaylists().obtenerPos(elegida));
+                    GestorPlaylists::agregarCancionAPlaylist(*usuarioActual, nombrePL, c);
+                    guardarADisco(usuarioActual);
                 }
                 DibujarShell(usuarioActual);
             }
@@ -587,24 +559,7 @@ void mostrarTabBiblioteca(Usuario* usuarioActual) {
     }
 }
 
-/*
- * Funcion: mostrarTabBuscar()
- * Proposito: Permitir al usuario buscar canciones por titulo, artista o genero.
- *            Muestra los resultados con navegacion y permite reproducirlos.
- * Parametros:
- *   - Usuario* usuarioActual: usuario en sesion
- * Retorno: void
- *
- * Operaciones internas:
- *   1. Mostrar tipo de busqueda (titulo/artista/genero)
- *   2. Leer texto de busqueda
- *   3. Llamar buscarCancionesPorXxx() segun tipo
- *   4. Mostrar resultados navegables
- *   5. ENTER en resultado llama iniciarReproduccion()
- *
- * Ejemplo:
- *   mostrarTabBuscar(usuarioActual);
- */
+// Tab Buscar: busqueda por titulo/artista/genero con Buscador. NUM=reproducir resultado
 void mostrarTabBuscar(Usuario* usuarioActual) {
     int tipoBusqueda = 0; // 0=titulo 1=artista 2=genero
     string query = "";
@@ -648,9 +603,7 @@ void mostrarTabBuscar(Usuario* usuarioActual) {
 
         if (ManejarTeclaGlobal(t, usuarioActual)) continue;
 
-        if (t.Key == ConsoleKey::LeftArrow) { delete resultados; gTabActual = (gTabActual + 6) % 7; return; }
-        if (t.Key == ConsoleKey::RightArrow) { delete resultados; gTabActual = (gTabActual + 1) % 7; return; }
-        if ((char)tolower((int)t.KeyChar) == 'q') { delete resultados; gMenuActivo = false; return; }
+        if (ManejarNavTab(t)) { delete resultados; return; }
 
         // Cambiar tipo con 1/2/3
         if (t.KeyChar == '1') tipoBusqueda = 0;
@@ -663,9 +616,9 @@ void mostrarTabBuscar(Usuario* usuarioActual) {
             query = LeerTextoSinIgnore(24, 6, "Busqueda: ");
 
             delete resultados;
-            if (tipoBusqueda == 0) resultados = buscarCancionesPorTitulo(gCanciones, query);
-            else if (tipoBusqueda == 1) resultados = buscarCancionesPorArtista(gCanciones, query);
-            else                        resultados = buscarCancionesPorGenero(gCanciones, query);
+            if (tipoBusqueda == 0) resultados = Buscador::buscarPorTitulo(gCanciones, query);
+            else if (tipoBusqueda == 1) resultados = Buscador::buscarPorArtista(gCanciones, query);
+            else                        resultados = Buscador::buscarPorGenero(gCanciones, query);
 
             DibujarShell(usuarioActual);
         }
@@ -673,37 +626,14 @@ void mostrarTabBuscar(Usuario* usuarioActual) {
         else if (t.KeyChar >= '1' && t.KeyChar <= '9' && resultados) {
             int idx = (int)(t.KeyChar - '1');
             if (idx < (int)resultados->longitud()) {
-                Cancion c = resultados->obtenerPos(idx);
-                delete gColaActual;
-                gColaActual = new Lista<Cancion>();
-                gIndiceActual = 0;
-                for (int i = idx; i < (int)resultados->longitud(); i++)
-                    gColaActual->agregarFinal(resultados->obtenerPos(i));
-                iniciarReproduccion(c);
+                reproducirDesde(resultados, idx);
                 DibujarShell(usuarioActual);
             }
         }
     }
 }
 
-/*
- * Funcion: mostrarTabPlaylists()
- * Proposito: Gestionar las playlists del usuario.
- *            Crear, ver, eliminar playlists y manipular sus canciones.
- *            Permite shuffle y ordenamiento alfabetico.
- * Parametros:
- *   - Usuario* usuarioActual: usuario propietario de las playlists
- * Retorno: void
- *
- * Operaciones internas:
- *   1. Listar playlists del usuario
- *   2. Opcion de crear nueva playlist
- *   3. Al seleccionar playlist: ver/agregar/eliminar/mezclar canciones
- *   4. Guardar cambios a disco automaticamente
- *
- * Ejemplo:
- *   mostrarTabPlaylists(usuarioActual);
- */
+// Tab Playlists: listar, crear(C), eliminar(D), ver detalle(ENTER)
 void mostrarTabPlaylists(Usuario* usuarioActual) {
     int sel = 0;
 
@@ -736,9 +666,7 @@ void mostrarTabPlaylists(Usuario* usuarioActual) {
 
         if (ManejarTeclaGlobal(t, usuarioActual)) continue;
 
-        if (t.Key == ConsoleKey::LeftArrow) { gTabActual = (gTabActual + 6) % 7; return; }
-        if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return; }
-        if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return; }
+        if (ManejarNavTab(t)) return;
 
         if (t.Key == ConsoleKey::UpArrow) { if (sel > 0) sel--; }
         if (t.Key == ConsoleKey::DownArrow) { if (sel < total - 1) sel++; }
@@ -748,7 +676,8 @@ void mostrarTabPlaylists(Usuario* usuarioActual) {
             LimpiarZona(23, 3, 75, 28);
             string nombre = LeerTexto(24, 5, "Nombre de la nueva playlist: ");
             if (!nombre.empty()) {
-                crearPlaylist(usuarioActual, nombre);
+                usuarioActual->crearPlaylist(Playlist(nombre));
+                guardarADisco(usuarioActual);
                 DibujarShell(usuarioActual);
             }
         }
@@ -757,11 +686,9 @@ void mostrarTabPlaylists(Usuario* usuarioActual) {
         else if ((char)tolower((int)t.KeyChar) == 'd' && total > 0) {
             Playlist p = usuarioActual->getPlaylists().obtenerPos(sel);
             LimpiarZona(23, 20, 75, 8);
-            vector<OpcionMenu> ops = { {"SI, eliminar", 1}, {"NO, cancelar", 0} };
-            int conf = MenuFlechas(ops, 28, 22, "Eliminar playlist: " + p.getNombre() + "?");
-            if (conf == 1) {
+            if (MenuConfirmacion(28, 22, "Eliminar playlist: " + p.getNombre() + "?")) {
                 usuarioActual->eliminarPlaylist(p.getNombre());
-                guardarUsuarioADisco(usuarioActual);
+                guardarADisco(usuarioActual);
                 sel = max(0, sel - 1);
             }
             DibujarShell(usuarioActual);
@@ -769,146 +696,110 @@ void mostrarTabPlaylists(Usuario* usuarioActual) {
 
         // Ver playlist
         else if (t.Key == ConsoleKey::Enter && total > 0) {
-            Playlist pl = usuarioActual->getPlaylists().obtenerPos(sel);
-            string nombrePL = pl.getNombre();
-
-            // Sub-pantalla de la playlist
-            while (true) {
-                LimpiarZona(23, 3, 75, 28);
-                Imprimir(24, 3, "PLAYLIST: " + nombrePL, ConsoleColor::Yellow);
-                Imprimir(24, 4, string(72, '-'), ConsoleColor::DarkGreen);
-
-                Playlist plActual = usuarioActual->buscarPlaylist(nombrePL);
-                int totalC = (int)plActual.getCanciones().longitud();
-                int selC = 0;
-                int yC = 5;
-
-                if (totalC == 0) {
-                    Imprimir(25, yC, "(vacia - presiona A para agregar)", ConsoleColor::DarkGray);
-                }
-                else {
-                    for (int i = 0; i < totalC; i++) {
-                        Cancion c = plActual.getCanciones().obtenerPos(i);
-                        string lin = to_string(i + 1) + ". " + Truncar(c.getTitulo(), 28) + " - " + Truncar(c.getArtista(), 18);
-                        Imprimir(25, yC++, lin, ConsoleColor::White);
-                    }
-                }
-
-                Imprimir(24, 28, "A:Agregar  D:Eliminar  S:Shuffle  O:Ordenar  PLAY:Reproducir  ESC:Volver",
-                    ConsoleColor::DarkGray);
-
-                ConsoleKeyInfo tc = Console::ReadKey(true);
-
-                if (ManejarTeclaGlobal(tc, usuarioActual)) { DibujarShell(usuarioActual); continue; }
-                if (tc.Key == ConsoleKey::Escape) break;
-
-                if ((char)tolower((int)tc.KeyChar) == 'a') {
-                    // Agregar cancion desde almacen
-                    if (!gCanciones || gCanciones->esVacia()) {
-                        Imprimir(24, 29, "No hay canciones en el almacen.", ConsoleColor::Red);
-                        Console::ReadKey(true);
-                    }
-                    else {
-                        LimpiarZona(23, 3, 75, 28);
-                        vector<OpcionMenu> ops;
-                        int idx = 0;
-                        gCanciones->recorrer([&](Cancion c) {
-                            ops.push_back({ Truncar(c.getTitulo(), 28) + " - " + Truncar(c.getArtista(), 18), idx++ });
-                            });
-                        ops.push_back({ "Cancelar", -1 });
-                        int elegida = MenuFlechas(ops, 26, 6, "Selecciona cancion a agregar:");
-                        if (elegida >= 0) {
-                            Cancion c = gCanciones->obtenerPos(elegida);
-                            agregarCancionAPlaylist(usuarioActual, nombrePL, c);
-                            guardarPlaylistADisco(usuarioActual, usuarioActual->buscarPlaylist(nombrePL));
-                        }
-                        DibujarShell(usuarioActual);
-                    }
-                }
-                else if ((char)tolower((int)tc.KeyChar) == 'd' && totalC > 0) {
-                    LimpiarZona(23, 3, 75, 28);
-                    vector<OpcionMenu> ops;
-                    int idx2 = 0;
-                    plActual.getCanciones().recorrer([&](Cancion c) {
-                        ops.push_back({ Truncar(c.getTitulo(), 28) + " - " + Truncar(c.getArtista(), 18), idx2++ });
-                        });
-                    ops.push_back({ "Cancelar", -1 });
-                    int elegida = MenuFlechas(ops, 26, 6, "Selecciona cancion a eliminar:");
-                    if (elegida >= 0) {
-                        Cancion cElim = plActual.getCanciones().obtenerPos(elegida);
-                        eliminarCancionDePlaylist(usuarioActual, nombrePL, cElim.getTitulo());
-                        guardarPlaylistADisco(usuarioActual, usuarioActual->buscarPlaylist(nombrePL));
-                    }
-                    DibujarShell(usuarioActual);
-                }
-                else if ((char)tolower((int)tc.KeyChar) == 's') {
-                    // Shuffle
-                    Lista<Playlist>& pls2 = usuarioActual->getPlaylists();
-                    for (uint i = 0; i < pls2.longitud(); i++) {
-                        Playlist pRef = pls2.obtenerPos(i);
-                        if (pRef.getNombre() == nombrePL) {
-                            mezclarCancionesConFisherYates(&pRef.getCanciones());
-                            pls2.modificarPos(i, pRef);
-                            break;
-                        }
-                    }
-                    guardarPlaylistADisco(usuarioActual, usuarioActual->buscarPlaylist(nombrePL));
-                    DibujarShell(usuarioActual);
-                    Imprimir(24, 29, "Playlist mezclada!", ConsoleColor::Green);
-                    Console::ReadKey(true);
-                    DibujarShell(usuarioActual);
-                }
-                else if ((char)tolower((int)tc.KeyChar) == 'o') {
-                    // Ordenar A-Z
-                    Lista<Playlist>& pls2 = usuarioActual->getPlaylists();
-                    for (uint i = 0; i < pls2.longitud(); i++) {
-                        Playlist pRef = pls2.obtenerPos(i);
-                        if (pRef.getNombre() == nombrePL) {
-                            ordenarCancionesConBubbleSort(&pRef.getCanciones());
-                            pls2.modificarPos(i, pRef);
-                            break;
-                        }
-                    }
-                    guardarPlaylistADisco(usuarioActual, usuarioActual->buscarPlaylist(nombrePL));
-                    DibujarShell(usuarioActual);
-                    Imprimir(24, 29, "Playlist ordenada A-Z!", ConsoleColor::Green);
-                    Console::ReadKey(true);
-                    DibujarShell(usuarioActual);
-                }
-                else if ((char)tolower((int)tc.KeyChar) == 'p' && totalC > 0) {
-                    // Reproducir playlist
-                    delete gColaActual;
-                    gColaActual = new Lista<Cancion>();
-                    gIndiceActual = 0;
-                    plActual.getCanciones().recorrer([&](Cancion c) {
-                        gColaActual->agregarFinal(c);
-                        });
-                    Cancion primera = gColaActual->obtenerPos(0);
-                    iniciarReproduccion(primera);
-                    DibujarShell(usuarioActual);
-                }
-            }
+            string nombrePL = usuarioActual->getPlaylists().obtenerPos(sel).getNombre();
+            mostrarDetallePlaylist(usuarioActual, nombrePL);
             DibujarShell(usuarioActual);
         }
     }
 }
 
-/*
- * Funcion: mostrarTabAlbumes()
- * Proposito: Mostrar todos los albumes cargados desde disco.
- *            Permite expandir un album para ver su tracklist y reproducirlo.
- * Parametros: void (usa gAlbumes y gUsuarioActual globales)
- * Retorno: void
- *
- * Navegacion:
- *   UP/DOWN: moverse por albumes
- *   ENTER  : expandir/contraer album
- *   P      : reproducir album seleccionado
- *   <- ->  : cambiar tab
- *
- * Ejemplo:
- *   mostrarTabAlbumes();
- */
+// Sub-pantalla de playlist: A=agregar, D=eliminar, S=shuffle, O=ordenar, P=play, ESC=volver
+void mostrarDetallePlaylist(Usuario* usuarioActual, string nombrePL) {
+    while (true) {
+        LimpiarZona(23, 3, 75, 28);
+        Imprimir(24, 3, "PLAYLIST: " + nombrePL, ConsoleColor::Yellow);
+        Imprimir(24, 4, string(72, '-'), ConsoleColor::DarkGreen);
+
+        Playlist plActual = usuarioActual->buscarPlaylist(nombrePL);
+        int totalC = (int)plActual.getCanciones().longitud();
+        int yC = 5;
+
+        if (totalC == 0) {
+            Imprimir(25, yC, "(vacia - presiona A para agregar)", ConsoleColor::DarkGray);
+        }
+        else {
+            for (int i = 0; i < totalC; i++) {
+                Cancion c = plActual.getCanciones().obtenerPos(i);
+                string lin = to_string(i + 1) + ". " + Truncar(c.getTitulo(), 28) + " - " + Truncar(c.getArtista(), 18);
+                Imprimir(25, yC++, lin, ConsoleColor::White);
+            }
+        }
+
+        Imprimir(24, 28, "A:Agregar  D:Eliminar  S:Shuffle  O:Ordenar  PLAY:Reproducir  ESC:Volver",
+            ConsoleColor::DarkGray);
+
+        ConsoleKeyInfo tc = Console::ReadKey(true);
+
+        if (ManejarTeclaGlobal(tc, usuarioActual)) { DibujarShell(usuarioActual); continue; }
+        if (tc.Key == ConsoleKey::Escape) break;
+
+        char k = (char)tolower((int)tc.KeyChar);
+
+        if (k == 'a') {
+            if (!gCanciones || gCanciones->esVacia()) {
+                Imprimir(24, 29, "No hay canciones en el almacen.", ConsoleColor::Red);
+                Console::ReadKey(true);
+            }
+            else {
+                int elegida = MenuSeleccionCancion(gCanciones, "Selecciona cancion a agregar:");
+                if (elegida >= 0) {
+                    GestorPlaylists::agregarCancionAPlaylist(*usuarioActual, nombrePL, gCanciones->obtenerPos(elegida));
+                    guardarADisco(usuarioActual);
+                }
+                DibujarShell(usuarioActual);
+            }
+        }
+        else if (k == 'd' && totalC > 0) {
+            Lista<Cancion>& cancs = plActual.getCanciones();
+            int elegida = MenuSeleccionCancion(&cancs, "Selecciona cancion a eliminar:");
+            if (elegida >= 0) {
+                GestorPlaylists::eliminarCancionDePlaylist(*usuarioActual, nombrePL, cancs.obtenerPos(elegida).getTitulo());
+                guardarADisco(usuarioActual);
+            }
+            DibujarShell(usuarioActual);
+        }
+        else if (k == 's') {
+            Lista<Playlist>& pls2 = usuarioActual->getPlaylists();
+            for (uint i = 0; i < pls2.longitud(); i++) {
+                Playlist pRef = pls2.obtenerPos(i);
+                if (pRef.getNombre() == nombrePL) {
+                    Playlist::mezclarFisherYates(&pRef.getCanciones());
+                    pls2.modificarPos(i, pRef);
+                    break;
+                }
+            }
+            guardarADisco(usuarioActual);
+            Imprimir(24, 29, "Playlist mezclada!", ConsoleColor::Green);
+            Console::ReadKey(true);
+        }
+        else if (k == 'o') {
+            Lista<Playlist>& pls2 = usuarioActual->getPlaylists();
+            for (uint i = 0; i < pls2.longitud(); i++) {
+                Playlist pRef = pls2.obtenerPos(i);
+                if (pRef.getNombre() == nombrePL) {
+                    Playlist::ordenarBubbleSort(&pRef.getCanciones());
+                    pls2.modificarPos(i, pRef);
+                    break;
+                }
+            }
+            guardarADisco(usuarioActual);
+            Imprimir(24, 29, "Playlist ordenada A-Z!", ConsoleColor::Green);
+            Console::ReadKey(true);
+        }
+        else if (k == 'p' && totalC > 0) {
+            delete gColaActual;
+            gColaActual = new Lista<Cancion>();
+            gIndiceActual = 0;
+            plActual.getCanciones().recorrer([&](Cancion c) {
+                gColaActual->agregarFinal(c);
+                });
+            iniciarReproduccion(gColaActual->obtenerPos(0));
+            DibujarShell(usuarioActual);
+        }
+    }
+}
+
+// Tab Albumes: lista albumes con tracklist preview. ENTER=reproducir album
 void mostrarTabAlbumes() {
     int sel = 0;
     int total = gAlbumes ? (int)gAlbumes->longitud() : 0;
@@ -956,9 +847,7 @@ void mostrarTabAlbumes() {
 
         if (gUsuarioActual && ManejarTeclaGlobal(t, gUsuarioActual)) continue;
 
-        if (t.Key == ConsoleKey::LeftArrow) { gTabActual = (gTabActual + 6) % 7; return; }
-        if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return; }
-        if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return; }
+        if (ManejarNavTab(t)) return;
 
         if (t.Key == ConsoleKey::UpArrow) { if (sel > 0) sel--; }
         if (t.Key == ConsoleKey::DownArrow) { if (sel < total - 1) sel++; }
@@ -980,22 +869,7 @@ void mostrarTabAlbumes() {
     }
 }
 
-/*
- * Funcion: mostrarTabArtistas()
- * Proposito: Listar artistas unicos extraidos del almacen de canciones.
- *            Al seleccionar un artista muestra todas sus canciones.
- * Parametros: void (usa gCanciones y gUsuarioActual globales)
- * Retorno: void
- *
- * Operaciones internas:
- *   1. Extraer artistas unicos de gCanciones
- *   2. Mostrar lista navegable
- *   3. ENTER expande canciones del artista
- *   4. ENTER en cancion la reproduce
- *
- * Ejemplo:
- *   mostrarTabArtistas();
- */
+// Tab Artistas: lista artistas unicos. ENTER=ver canciones, NUM=reproducir
 void mostrarTabArtistas() {
     // Extraer artistas unicos
     vector<string> artistas;
@@ -1040,17 +914,14 @@ void mostrarTabArtistas() {
 
         if (gUsuarioActual && ManejarTeclaGlobal(t, gUsuarioActual)) continue;
 
-        if (t.Key == ConsoleKey::LeftArrow) { gTabActual = (gTabActual + 6) % 7; return; }
-        if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return; }
-        if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return; }
+        if (ManejarNavTab(t)) return;
 
         if (t.Key == ConsoleKey::UpArrow) { if (sel > 0) sel--; }
         if (t.Key == ConsoleKey::DownArrow) { if (sel < total - 1) sel++; }
 
         if (t.Key == ConsoleKey::Enter && total > 0) {
-            // Mostrar canciones del artista seleccionado
             string artista = artistas[sel];
-            Lista<Cancion>* cancArtista = buscarCancionesPorArtista(gCanciones, artista);
+            Lista<Cancion>* cancArtista = Buscador::buscarPorArtista(gCanciones, artista);
 
             LimpiarZona(23, 3, 75, 28);
             Imprimir(24, 3, "ARTISTA: " + artista, ConsoleColor::Yellow);
@@ -1074,12 +945,7 @@ void mostrarTabArtistas() {
                 if (t2.KeyChar >= '1' && t2.KeyChar <= '9') {
                     int idx = (int)(t2.KeyChar - '1');
                     if (idx < totC) {
-                        delete gColaActual;
-                        gColaActual = new Lista<Cancion>();
-                        gIndiceActual = 0;
-                        for (int i = idx; i < totC; i++)
-                            gColaActual->agregarFinal(cancArtista->obtenerPos(i));
-                        iniciarReproduccion(cancArtista->obtenerPos(idx));
+                        reproducirDesde(cancArtista, idx);
                         if (gUsuarioActual) DibujarShell(gUsuarioActual);
                         break;
                     }
@@ -1090,24 +956,7 @@ void mostrarTabArtistas() {
     }
 }
 
-/*
- * Funcion: mostrarTabFavoritos()
- * Proposito: Mostrar las canciones marcadas como favoritas por el usuario.
- *            Visualizacion en orden LIFO (ultima agregada primero).
- *            Permite eliminar favoritos y reproducir canciones.
- * Parametros:
- *   - Usuario* usuarioActual: usuario dueno de los favoritos
- * Retorno: void
- *
- * Navegacion:
- *   UP/DOWN: moverse por favoritos
- *   ENTER  : reproducir cancion
- *   D      : eliminar de favoritos
- *   <- ->  : cambiar tab
- *
- * Ejemplo:
- *   mostrarTabFavoritos(usuarioActual);
- */
+// Tab Favoritos: muestra favoritos en LIFO. NUM=reproducir, D=eliminar
 void mostrarTabFavoritos(Usuario* usuarioActual) {
     while (true) {
         LimpiarZona(23, 3, 75, 28);
@@ -1136,9 +985,7 @@ void mostrarTabFavoritos(Usuario* usuarioActual) {
 
         if (ManejarTeclaGlobal(t, usuarioActual)) continue;
 
-        if (t.Key == ConsoleKey::LeftArrow) { gTabActual = (gTabActual + 6) % 7; return; }
-        if (t.Key == ConsoleKey::RightArrow) { gTabActual = (gTabActual + 1) % 7; return; }
-        if ((char)tolower((int)t.KeyChar) == 'q') { gMenuActivo = false; return; }
+        if (ManejarNavTab(t)) return;
 
         // Reproducir por numero (1=ultimo favorito, etc.)
         if (t.KeyChar >= '1' && t.KeyChar <= '9' && total > 0) {
@@ -1166,32 +1013,15 @@ void mostrarTabFavoritos(Usuario* usuarioActual) {
             int elegida = MenuFlechas(ops, 26, 6, "Eliminar de favoritos:");
             if (elegida >= 0) {
                 Cancion cElim = usuarioActual->getFavoritos().getLista().obtenerPos(elegida);
-                eliminarDeFavoritos(usuarioActual, cElim);
-                guardarFavoritosADisco(usuarioActual);
+                usuarioActual->eliminarFavorito(cElim.getTitulo());
+                guardarADisco(usuarioActual);
             }
             DibujarShell(usuarioActual);
         }
     }
 }
 
-/*
- * Funcion: mostrarTabConfiguracion()
- * Proposito: Mostrar y modificar ajustes del usuario y la aplicacion.
- *            Incluye: volumen, modo reproduccion, info de perfil,
- *            opcion de eliminar cuenta y cerrar sesion.
- * Parametros:
- *   - Usuario* usuarioActual: usuario en sesion
- * Retorno: void
- *
- * Opciones:
- *   - Subir/Bajar volumen
- *   - Activar/Desactivar modo aleatorio
- *   - Ver info de perfil
- *   - Eliminar cuenta
- *
- * Ejemplo:
- *   mostrarTabConfiguracion(usuarioActual);
- */
+// Tab Configuracion: perfil, volumen, modo aleatorio, eliminar cuenta
 void mostrarTabConfiguracion(Usuario* usuarioActual) {
     while (true) {
         LimpiarZona(23, 3, 75, 28);
@@ -1232,21 +1062,15 @@ void mostrarTabConfiguracion(Usuario* usuarioActual) {
         else if (accion == 2) { cambiarVolumen(-10); }
         else if (accion == 3) { gAleatorio = !gAleatorio; }
         else if (accion == 4) {
-            // Confirmar eliminacion
             LimpiarZona(23, 3, 75, 28);
-            vector<OpcionMenu> conf = {
-                { "SI, eliminar permanentemente", 1 },
-                { "NO, cancelar",                 0 }
-            };
-            int respuesta = MenuFlechas(conf, 28, 10, "Eliminar cuenta " + usuarioActual->getNombre() + "?");
-            if (respuesta == 1) {
+            if (MenuConfirmacion(28, 10, "Eliminar cuenta " + usuarioActual->getNombre() + "?")) {
                 gGestor.eliminar(usuarioActual->getId());
                 gMenuActivo = false;
                 return;
             }
         }
         else if (accion == 5 || accion == -1) {
-            guardarUsuarioADisco(usuarioActual);
+            guardarADisco(usuarioActual);
             gTabActual = (gTabActual + 6) % 7;
             return;
         }
@@ -1256,24 +1080,7 @@ void mostrarTabConfiguracion(Usuario* usuarioActual) {
 }
 
 
-// ============================================================
-// BLOQUE 2: CARGA DE DATOS (3 funciones + crearEstructuraCarpetas)
-// ============================================================
-
-/*
- * Funcion: crearEstructuraCarpetas()
- * Proposito: Verificar y crear la estructura base de carpetas y archivos
- *            necesarios para que la aplicacion funcione:
- *              - Carpeta usuarios_data/
- *              - Carpeta albumes/
- *              - Archivo almacenCanciones.txt (si no existe)
- *            Se llama una sola vez al inicio desde main().
- * Parametros: void
- * Retorno: void
- *
- * Ejemplo:
- *   crearEstructuraCarpetas(); // primera instruccion de main()
- */
+// Crea carpetas usuarios_data/, albumes/ y almacenCanciones.txt si no existen
 void crearEstructuraCarpetas() {
     (void)_mkdir("usuarios_data");
     (void)_mkdir("albumes");
@@ -1288,23 +1095,7 @@ void crearEstructuraCarpetas() {
     }
 }
 
-/*
- * Funcion: cargarAlmacenCanciones()
- * Proposito: Leer almacenCanciones.txt y poblar la lista global de canciones.
- *            Se ejecuta una sola vez al iniciar la aplicacion.
- * Parametros:
- *   - Lista<Cancion>* canciones: lista destino donde se agregan las canciones
- * Retorno: bool (true si cargo al menos una cancion)
- *
- * Formato del archivo (4 campos):
- *   Titulo|Artista|Genero|Duracion
- *   Bohemian Rhapsody|Queen|Rock|5.20
- *   (la duracion es opcional; si falta se usa 0.0)
- *
- * Ejemplo:
- *   Lista<Cancion>* gCanciones = new Lista<Cancion>();
- *   cargarAlmacenCanciones(gCanciones);
- */
+// Lee almacenCanciones.txt (Titulo|Artista|Genero|Duracion) y puebla la lista
 bool cargarAlmacenCanciones(Lista<Cancion>* canciones) {
     ifstream archivo("almacenCanciones.txt");
     if (!archivo.is_open()) return false;
@@ -1336,48 +1127,7 @@ bool cargarAlmacenCanciones(Lista<Cancion>* canciones) {
     return !canciones->esVacia();
 }
 
-/*
- * Funcion: cargarUsuariosDelDisco()
- * Proposito: Cargar el listado basico de usuarios desde usuarios_data/usuarios.txt.
- *            Solo carga id, nombre y email (sin playlists ni favoritos).
- *            Los datos completos se cargan al hacer login.
- * Parametros:
- *   - Lista<Usuario>* usuarios: lista destino donde se agregan los usuarios
- * Retorno: bool (true si cargo al menos un usuario)
- *
- * Archivo leido:
- *   usuarios_data/usuarios.txt  formato: id|nombre|email
- *
- * Ejemplo:
- *   Lista<Usuario>* usuarios = new Lista<Usuario>();
- *   cargarUsuariosDelDisco(usuarios);
- */
-bool cargarUsuariosDelDisco(Lista<Usuario>* usuarios) {
-    Lista<Usuario>& listaGestor = gGestor.getLista();
-    if (listaGestor.esVacia()) return false;
-
-    listaGestor.recorrer([&](Usuario u) {
-        usuarios->agregarFinal(u);
-        });
-    return !usuarios->esVacia();
-}
-
-/*
- * Funcion: cargarAlbumesDelDisco()
- * Proposito: Leer la carpeta albumes/ y cargar cada album con su tracklist.
- *            Cada subcarpeta debe tener config.txt y canciones.txt.
- * Parametros:
- *   - Lista<Album>* albumes: lista destino donde se agregan los albumes
- * Retorno: bool (true si cargo al menos un album)
- *
- * Estructura esperada:
- *   albumes/[NombreAlbum]/config.txt    -> nombre|artista|anio
- *   albumes/[NombreAlbum]/canciones.txt -> titulo|artista|genero|duracion
- *
- * Ejemplo:
- *   Lista<Album>* gAlbumes = new Lista<Album>();
- *   cargarAlbumesDelDisco(gAlbumes);
- */
+// Lee albumes/[nombre]/config.txt y canciones.txt para cargar cada album
 bool cargarAlbumesDelDisco(Lista<Album>* albumes) {
     WIN32_FIND_DATAA ffd;
     HANDLE hFind = FindFirstFileA("albumes\\*", &ffd);
@@ -1436,71 +1186,16 @@ bool cargarAlbumesDelDisco(Lista<Album>* albumes) {
 }
 
 
-// ============================================================
-// BLOQUE 3: GESTION DE USUARIOS (3 funciones)
-// ============================================================
+// Registra usuario nuevo con nombre y email. No hace login automatico.
+bool crearNuevoUsuario(string nombre, string email) {
+    if (nombre.empty() || email.empty()) return false;
+    if (gGestor.existeNombre(nombre))  return false;
 
-/*
- * Funcion: verificarUsuarioExiste()
- * Proposito: Comprobar si un nombre de usuario ya esta registrado en el sistema.
- *            Se usa antes de login (verificar que existe) y antes de registro
- *            (verificar que NO existe para evitar duplicados).
- * Parametros:
- *   - string nombre: nombre de usuario a buscar (case-sensitive)
- * Retorno: bool (true si el nombre ya existe en el sistema)
- *
- * Ejemplo:
- *   if (!verificarUsuarioExiste("Joel")) crearNuevoUsuario("Joel", "j@mail.com");
- */
-bool verificarUsuarioExiste(string nombre) {
+    gGestor.registrar(nombre, email);
     return gGestor.existeNombre(nombre);
 }
 
-/*
- * Funcion: crearNuevoUsuario()
- * Proposito: Registrar un usuario nuevo con nombre y email.
- *            Genera un ID unico de 4 digitos y crea sus carpetas en disco.
- *            NO hace login automatico; llamar loginUsuario() despues.
- * Parametros:
- *   - string nombre: nombre de usuario deseado (debe ser unico)
- *   - string email : correo electronico del usuario
- * Retorno: bool (true si se registro correctamente)
- *
- * Archivos creados:
- *   usuarios_data/usuarios.txt (actualizado)
- *   usuarios_data/usuario_[id].txt (datos iniciales vacios)
- *
- * Ejemplo:
- *   if (crearNuevoUsuario("Maria", "maria@mail.com"))
- *       loginUsuario("Maria");
- */
-bool crearNuevoUsuario(string nombre, string email) {
-    if (nombre.empty() || email.empty()) return false;
-    if (verificarUsuarioExiste(nombre))  return false;
-
-    gGestor.registrar(nombre, email);
-    return verificarUsuarioExiste(nombre);
-}
-
-/*
- * Funcion: loginUsuario()
- * Proposito: Buscar el usuario por nombre, cargar sus playlists y favoritos
- *            desde disco, y retornar un puntero al objeto Usuario cargado.
- *            El llamador es responsable de liberar la memoria (delete).
- * Parametros:
- *   - string nombre: nombre del usuario a autenticar
- * Retorno: Usuario* (puntero al usuario con datos cargados, o nullptr si no existe)
- *
- * Operaciones internas:
- *   1. Llamar GestorUsuarios::buscarPorNombre() que carga datos completos
- *   2. Verificar que el id sea valido (> 0)
- *   3. Copiar al heap y retornar puntero
- *
- * Ejemplo:
- *   Usuario* u = loginUsuario("Joel");
- *   if (u) mostrarMenuPrincipal(u);
- *   delete u;
- */
+// Busca usuario por nombre, carga playlists/favoritos. Retorna puntero (delete responsabilidad del llamador)
 Usuario* loginUsuario(string nombre) {
     Usuario encontrado = gGestor.buscarPorNombre(nombre);
     if (encontrado.getId() == 0) return nullptr;
@@ -1510,297 +1205,33 @@ Usuario* loginUsuario(string nombre) {
 }
 
 
-// ============================================================
-// BLOQUE 4: GESTION DE PLAYLISTS (3 funciones)
-// ============================================================
-
-/*
- * Funcion: crearPlaylist()
- * Proposito: Crear una playlist vacia con el nombre dado y asociarla al usuario.
- *            Guarda los cambios a disco automaticamente.
- * Parametros:
- *   - Usuario* usuario    : puntero al usuario propietario
- *   - string  nombre      : nombre de la nueva playlist (debe ser unico para el usuario)
- * Retorno: bool (true si se creo correctamente)
- *
- * Operaciones internas:
- *   1. Validar parametros
- *   2. Crear objeto Playlist(nombre)
- *   3. Llamar usuario->crearPlaylist()
- *   4. Guardar a disco con guardarUsuarioADisco()
- *
- * Ejemplo:
- *   crearPlaylist(usuarioActual, "Rock Favoritos");
- */
-bool crearPlaylist(Usuario* usuario, string nombre) {
-    if (!usuario || nombre.empty()) return false;
-
-    usuario->crearPlaylist(Playlist(nombre));
-    guardarUsuarioADisco(usuario);
-    return true;
-}
-
-/*
- * Funcion: agregarCancionAPlaylist()
- * Proposito: Agregar una cancion a una playlist existente del usuario.
- *            Usa modificarPos() para actualizar el nodo en la lista enlazada.
- * Parametros:
- *   - Usuario* usuario      : propietario de la playlist
- *   - string  nombrePlaylist: nombre exacto de la playlist destino
- *   - Cancion cancion       : objeto cancion a insertar
- * Retorno: bool (true si se agrego, false si la playlist no existe)
- *
- * Operaciones internas:
- *   1. Recorrer lista de playlists del usuario
- *   2. Localizar la playlist por nombre
- *   3. Llamar playlist.agregarCancion()
- *   4. Actualizar nodo con modificarPos()
- *
- * Ejemplo:
- *   Cancion c("Bohemian Rhapsody","Rock",5.2f,"Queen");
- *   agregarCancionAPlaylist(usuario, "Rock Classics", c);
- */
-bool agregarCancionAPlaylist(Usuario* usuario, string nombrePlaylist, Cancion cancion) {
-    if (!usuario) return false;
-
-    Lista<Playlist>& pls = usuario->getPlaylists();
-    for (uint i = 0; i < pls.longitud(); i++) {
-        Playlist p = pls.obtenerPos(i);
-        if (p.getNombre() == nombrePlaylist) {
-            p.agregarCancion(cancion);
-            pls.modificarPos(i, p);
-            return true;
-        }
-    }
-    return false;
-}
-
-/*
- * Funcion: eliminarCancionDePlaylist()
- * Proposito: Eliminar una cancion (por titulo) de una playlist del usuario.
- *            Usa modificarPos() para actualizar el nodo en la lista enlazada.
- * Parametros:
- *   - Usuario* usuario      : propietario de la playlist
- *   - string  nombrePlaylist: nombre de la playlist donde esta la cancion
- *   - string  tituloCancion : titulo exacto de la cancion a eliminar
- * Retorno: bool (true si se elimino, false si no se encontro playlist o cancion)
- *
- * Operaciones internas:
- *   1. Localizar playlist por nombre
- *   2. Llamar playlist.eliminarCancion(titulo)
- *   3. Actualizar nodo con modificarPos()
- *
- * Ejemplo:
- *   eliminarCancionDePlaylist(usuario, "Rock Classics", "Bohemian Rhapsody");
- */
-bool eliminarCancionDePlaylist(Usuario* usuario, string nombrePlaylist, string tituloCancion) {
-    if (!usuario) return false;
-
-    Lista<Playlist>& pls = usuario->getPlaylists();
-    for (uint i = 0; i < pls.longitud(); i++) {
-        Playlist p = pls.obtenerPos(i);
-        if (p.getNombre() == nombrePlaylist) {
-            p.eliminarCancion(tituloCancion);
-            pls.modificarPos(i, p);
-            return true;
-        }
-    }
-    return false;
-}
-
-
-// ============================================================
-// BLOQUE 5: GESTION DE FAVORITOS (3 funciones)
-// ============================================================
-
-/*
- * Funcion: agregarAFavoritos()
- * Proposito: Marcar una cancion como favorita para el usuario.
- *            Evita duplicados usando esCancionFavorita() primero.
- * Parametros:
- *   - Usuario* usuario: dueno de la lista de favoritos
- *   - Cancion  cancion: cancion a agregar a favoritos
- * Retorno: bool (true si se agrego, false si ya era favorita o error)
- *
- * Ejemplo:
- *   Cancion c = gCanciones->obtenerPos(sel);
- *   if (!esCancionFavorita(usuario, c)) agregarAFavoritos(usuario, c);
- */
-bool agregarAFavoritos(Usuario* usuario, Cancion cancion) {
-    if (!usuario) return false;
-    if (esCancionFavorita(usuario, cancion)) return false;
-
-    usuario->agregarFavorito(cancion);
-    return true;
-}
-
-/*
- * Funcion: eliminarDeFavoritos()
- * Proposito: Quitar una cancion de la lista de favoritos del usuario.
- * Parametros:
- *   - Usuario* usuario: dueno de la lista de favoritos
- *   - Cancion  cancion: cancion a eliminar (se busca por titulo)
- * Retorno: bool (true si se elimino, false si no estaba o error)
- *
- * Ejemplo:
- *   eliminarDeFavoritos(usuario, cancionSeleccionada);
- */
-bool eliminarDeFavoritos(Usuario* usuario, Cancion cancion) {
-    if (!usuario) return false;
-    if (!esCancionFavorita(usuario, cancion)) return false;
-
-    usuario->eliminarFavorito(cancion.getTitulo());
-    return true;
-}
-
-/*
- * Funcion: esCancionFavorita()
- * Proposito: Verificar si una cancion ya esta en la lista de favoritos del usuario.
- *            Busca por titulo de la cancion.
- * Parametros:
- *   - Usuario* usuario: dueno de la lista de favoritos
- *   - Cancion  cancion: cancion a verificar
- * Retorno: bool (true si la cancion esta en favoritos)
- *
- * Ejemplo:
- *   if (esCancionFavorita(usuario, c)) mostrar("<3");
- */
-bool esCancionFavorita(Usuario* usuario, Cancion cancion) {
-    if (!usuario) return false;
-    return usuario->getFavoritos().esFavorita(cancion.getTitulo());
-}
-
-
-// ============================================================
-// BLOQUE 6: BUSQUEDA (3 funciones)
-// ============================================================
-
-/*
- * Funcion: buscarCancionesPorTitulo()
- * Proposito: Buscar canciones cuyo titulo coincida exactamente con el query.
- *            Retorna una nueva lista con los resultados (el llamador debe hacer delete).
- * Parametros:
- *   - Lista<Cancion>* canciones: lista fuente donde buscar
- *   - string titulo            : texto a comparar con el titulo de cada cancion
- * Retorno: Lista<Cancion>* con las canciones que coinciden (puede estar vacia)
- *
- * Ejemplo:
- *   Lista<Cancion>* res = buscarCancionesPorTitulo(gCanciones, "Thriller");
- *   res->recorrer([](Cancion c){ cout << c.getTitulo(); });
- *   delete res;
- */
-Lista<Cancion>* buscarCancionesPorTitulo(Lista<Cancion>* canciones, string titulo) {
-    // Delega en Buscador::buscarPorTitulo (busqueda parcial case-insensitive)
-    return Buscador::buscarPorTitulo(canciones, titulo);
-}
-
-/*
- * Funcion: buscarCancionesPorArtista()
- * Proposito: Buscar canciones cuyo artista coincida con el query.
- *            Retorna una nueva lista con los resultados (el llamador debe hacer delete).
- * Parametros:
- *   - Lista<Cancion>* canciones: lista fuente donde buscar
- *   - string artista           : nombre del artista a buscar
- * Retorno: Lista<Cancion>* con las canciones del artista (puede estar vacia)
- *
- * Ejemplo:
- *   Lista<Cancion>* res = buscarCancionesPorArtista(gCanciones, "Queen");
- *   delete res;
- */
-Lista<Cancion>* buscarCancionesPorArtista(Lista<Cancion>* canciones, string artista) {
-    // Delega en Buscador::buscarPorArtista (busqueda parcial case-insensitive)
-    return Buscador::buscarPorArtista(canciones, artista);
-}
-
-/*
- * Funcion: buscarCancionesPorGenero()
- * Proposito: Buscar canciones pertenecientes a un genero musical especifico.
- *            Retorna una nueva lista con los resultados (el llamador debe hacer delete).
- * Parametros:
- *   - Lista<Cancion>* canciones: lista fuente donde buscar
- *   - string genero            : genero musical a filtrar
- * Retorno: Lista<Cancion>* con las canciones del genero (puede estar vacia)
- *
- * Ejemplo:
- *   Lista<Cancion>* res = buscarCancionesPorGenero(gCanciones, "Rock");
- *   delete res;
- */
-Lista<Cancion>* buscarCancionesPorGenero(Lista<Cancion>* canciones, string genero) {
-    // Delega en Buscador::buscarPorGenero (busqueda parcial case-insensitive)
-    return Buscador::buscarPorGenero(canciones, genero);
-}
-
-
-// ============================================================
-// BLOQUE 7: REPRODUCCION (6 funciones)
-// ============================================================
-
-/*
- * Funcion: iniciarReproduccion()
- * Proposito: Establecer la cancion actual y comenzar la reproduccion.
- *            Actualiza gCancionActual, gPausado y agrega al Reproductor.
- *            Si hay modo aleatorio activo, mezcla gColaActual primero.
- * Parametros:
- *   - Cancion cancion: cancion a reproducir
- * Retorno: void
- *
- * Ejemplo:
- *   iniciarReproduccion(gCanciones->obtenerPos(0));
- */
+// Establece cancion actual, mezcla cola si modo aleatorio, y llama play()
 void iniciarReproduccion(Cancion cancion) {
     gCancionActual = cancion;
     gPausado = false;
 
     if (gAleatorio && gColaActual && !gColaActual->esVacia())
-        mezclarCancionesConFisherYates(gColaActual);
+        Playlist::mezclarFisherYates(gColaActual);
 
     gReproductor.agregarCancion(cancion);
     gReproductor.play();
 }
 
-/*
- * Funcion: pausarReproduccion()
- * Proposito: Pausar la reproduccion activa. No hace nada si ya esta pausada.
- *            Actualiza la bandera global gPausado.
- * Parametros: void
- * Retorno: void
- *
- * Ejemplo:
- *   if (!gPausado) pausarReproduccion();
- */
+// Pausa la reproduccion (no-op si ya pausada)
 void pausarReproduccion() {
     if (gPausado) return;
     gPausado = true;
     gReproductor.pause();
 }
 
-/*
- * Funcion: reanudarReproduccion()
- * Proposito: Reanudar la reproduccion que estaba en pausa.
- *            No hace nada si no estaba pausada.
- * Parametros: void
- * Retorno: void
- *
- * Ejemplo:
- *   if (gPausado) reanudarReproduccion();
- */
+// Reanuda la reproduccion (no-op si no pausada)
 void reanudarReproduccion() {
     if (!gPausado) return;
     gPausado = false;
     gReproductor.play();
 }
 
-/*
- * Funcion: siguienteCancion()
- * Proposito: Avanzar a la siguiente cancion en gColaActual.
- *            Actualiza gCancionActual y gIndiceActual.
- *            Si se llega al final de la cola, se detiene.
- * Parametros: void
- * Retorno: void
- *
- * Ejemplo:
- *   siguienteCancion();  // al presionar N
- */
+// Avanza a la siguiente cancion en gColaActual
 void siguienteCancion() {
     if (!gColaActual || gColaActual->esVacia()) return;
 
@@ -1813,16 +1244,7 @@ void siguienteCancion() {
     }
 }
 
-/*
- * Funcion: cancionAnterior()
- * Proposito: Retroceder a la cancion anterior en gColaActual.
- *            Si gIndiceActual ya es 0, no hace nada.
- * Parametros: void
- * Retorno: void
- *
- * Ejemplo:
- *   cancionAnterior();  // al presionar B
- */
+// Retrocede a la cancion anterior en gColaActual
 void cancionAnterior() {
     if (!gColaActual || gColaActual->esVacia()) return;
 
@@ -1834,18 +1256,7 @@ void cancionAnterior() {
     }
 }
 
-/*
- * Funcion: cambiarVolumen()
- * Proposito: Incrementar o decrementar el volumen global de la aplicacion.
- *            El volumen se mantiene entre 0 y 100.
- * Parametros:
- *   - int delta: cantidad a sumar al volumen (negativo para bajar, positivo para subir)
- * Retorno: void
- *
- * Ejemplo:
- *   cambiarVolumen(10);   // sube 10%
- *   cambiarVolumen(-10);  // baja 10%
- */
+// Sube o baja el volumen (clamped 0-100)
 void cambiarVolumen(int delta) {
     gVolumen += delta;
     if (gVolumen > 100) gVolumen = 100;
@@ -1853,114 +1264,11 @@ void cambiarVolumen(int delta) {
 }
 
 
-// ============================================================
-// BLOQUE 8: ALGORITMOS (2 funciones)
-// ============================================================
-
-/*
- * Funcion: mezclarCancionesConFisherYates()
- * Proposito: Reordenar aleatoriamente una lista de canciones usando Fisher-Yates.
- *            Se usa cuando el usuario activa el modo ALEATORIO (shuffle).
- * Parametros:
- *   - Lista<Cancion>* lista: lista de canciones a mezclar (se modifica in-place)
- * Retorno: void
- *
- * Algoritmo Fisher-Yates O(n):
- *   Para i desde n-1 hasta 1:
- *     j = numero aleatorio entre 0 e i
- *     intercambiar lista[i] con lista[j]
- *
- * Ejemplo:
- *   mezclarCancionesConFisherYates(gColaActual);
- */
-void mezclarCancionesConFisherYates(Lista<Cancion>* lista) {
-    // Delega en Playlist::mezclarFisherYates (implementacion canonica del algoritmo)
-    Playlist::mezclarFisherYates(lista);
-}
-
-/*
- * Funcion: ordenarCancionesConBubbleSort()
- * Proposito: Ordenar alfabeticamente (A-Z) las canciones de una lista por titulo.
- *            Se usa cuando el usuario selecciona "Ordenar A-Z" en una playlist.
- * Parametros:
- *   - Lista<Cancion>* lista: lista de canciones a ordenar (se modifica in-place)
- * Retorno: void
- *
- * Algoritmo Bubble Sort Optimizado O(n^2) peor caso, O(n) mejor caso:
- *   Si en un pase completo no hubo intercambios, la lista ya esta ordenada.
- *
- * Ejemplo:
- *   ordenarCancionesConBubbleSort(&playlist.getCanciones());
- */
-void ordenarCancionesConBubbleSort(Lista<Cancion>* lista) {
-    // Delega en Playlist::ordenarBubbleSort (implementacion canonica del algoritmo)
-    Playlist::ordenarBubbleSort(lista);
-}
-
-
-// ============================================================
-// BLOQUE 9: SINCRONIZACION CON DISCO (3 funciones)
-// ============================================================
-
-/*
- * Funcion: guardarUsuarioADisco()
- * Proposito: Persistir todos los datos del usuario (playlists + favoritos) a disco.
- *            Delega en GestorUsuarios::guardarUsuarioActual().
- * Parametros:
- *   - Usuario* usuario: puntero al usuario cuya sesion se guardara
- * Retorno: bool (true si guardo correctamente)
- *
- * Archivos escritos:
- *   usuarios_data/usuario_[id].txt
- *
- * Ejemplo:
- *   guardarUsuarioADisco(gUsuarioActual);
- */
-bool guardarUsuarioADisco(Usuario* usuario) {
-    if (!usuario) return false;
+// Persiste todos los datos del usuario a disco (config, playlists, favoritos)
+void guardarADisco(Usuario* usuario) {
+    if (!usuario) return;
     gGestor.setUsuarioActual(usuario);
     gGestor.guardarUsuarioActual();
-    return true;
-}
-
-/*
- * Funcion: guardarPlaylistADisco()
- * Proposito: Guardar los datos de una playlist especifica del usuario.
- *            En la implementacion actual guarda todo el usuario (la estructura
- *            de GestorUsuarios no permite guardar una playlist de forma aislada).
- * Parametros:
- *   - Usuario*  usuario : propietario de la playlist
- *   - Playlist  playlist: objeto playlist a guardar (parametro informativo)
- * Retorno: bool (true si guardo correctamente)
- *
- * Ejemplo:
- *   Playlist pl = usuario->buscarPlaylist("Rock");
- *   guardarPlaylistADisco(usuario, pl);
- */
-bool guardarPlaylistADisco(Usuario* usuario, Playlist playlist) {
-    if (!usuario) return false;
-    gGestor.setUsuarioActual(usuario);
-    gGestor.guardarUsuarioActual();
-    return true;
-}
-
-/*
- * Funcion: guardarFavoritosADisco()
- * Proposito: Persistir la lista de favoritos del usuario a disco.
- *            En la implementacion actual guarda todo el usuario (favoritos
- *            estan en el mismo archivo que las playlists).
- * Parametros:
- *   - Usuario* usuario: dueno de los favoritos a guardar
- * Retorno: bool (true si guardo correctamente)
- *
- * Ejemplo:
- *   guardarFavoritosADisco(gUsuarioActual);
- */
-bool guardarFavoritosADisco(Usuario* usuario) {
-    if (!usuario) return false;
-    gGestor.setUsuarioActual(usuario);
-    gGestor.guardarUsuarioActual();
-    return true;
 }
 
 
