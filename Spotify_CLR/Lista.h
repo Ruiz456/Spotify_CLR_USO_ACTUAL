@@ -20,14 +20,14 @@ public:
         lon = 0;
 
         if (comp == nullptr) {
-            comparar = [](T a, T b) { return false; }; // fallback
+            comparar = [](T a, T b) { return false; };
         }
         else {
             comparar = comp;
         }
     }
 
-    // Básicos
+    // Basicos
     bool esVacia() { return lon == 0; }
     uint longitud() { return lon; }
 
@@ -58,7 +58,7 @@ public:
         }
     }
 
-    // Obtener por posición
+    // Obtener por posicion
     T obtenerPos(uint pos) {
         Nodo<T>* aux = ini;
 
@@ -81,7 +81,7 @@ public:
         return T();
     }
 
-    // Recorrer con lambda 
+    // Recorrer con lambda
     template <typename Func>
     void recorrer(Func f) {
         Nodo<T>* aux = ini;
@@ -91,10 +91,8 @@ public:
             aux = aux->getSgte();
         }
     }
-    ///////////////////////////////////////////////////////////
-//////////////////FUNCIONES MAS FLEXIBBLE//////////////////
-///////////////////////////////////////////////////////////
-// Eliminar en posición
+
+    // Eliminar en posicion
     void eliminarEn(uint pos) {
         if (pos >= lon) return;
 
@@ -115,7 +113,7 @@ public:
         lon--;
     }
 
-
+    // Insertar en posicion
     void insertarEn(T elem, uint pos)
     {
         if (pos == 0)
@@ -142,4 +140,19 @@ public:
         lon++;
     }
 
+    /*
+     * Funcion: modificarPos()
+     * Proposito: Reemplazar el elemento en la posicion indicada.
+     *            Necesaria para Bubble Sort y Fisher-Yates in-place.
+     * Parametros:
+     *   - uint pos : posicion (0-based) a modificar
+     *   - T    elem: nuevo valor a colocar
+     * Retorno: void
+     */
+    void modificarPos(uint pos, T elem) {
+        Nodo<T>* aux = ini;
+        for (uint i = 0; i < pos && aux; i++)
+            aux = aux->getSgte();
+        if (aux) aux->setElem(elem);
+    }
 };

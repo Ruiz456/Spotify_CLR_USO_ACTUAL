@@ -132,11 +132,13 @@
     <ClInclude Include="Buscador.h" />
     <ClInclude Include="Cancion.h" />
     <ClInclude Include="ColaReproduccion.h" />
+    <ClInclude Include="Entidad.h" />
     <ClInclude Include="Favoritos.h" />
     <ClInclude Include="FiltroCanciones.h" />
     <ClInclude Include="GestorPlaylists.h" />
     <ClInclude Include="GestorUsuarios.h" />
     <ClInclude Include="Header.h" />
+    <ClInclude Include="Header1.h" />
     <ClInclude Include="HistorialReproduccion.h" />
     <ClInclude Include="Lista.h" />
     <ClInclude Include="MotorRecomendacion.h" />

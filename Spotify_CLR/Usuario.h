@@ -4,6 +4,7 @@
 #include <functional>
 #include "Lista.h"
 #include "Playlist.h"
+#include "Favoritos.h"
 
 using namespace std;
 
