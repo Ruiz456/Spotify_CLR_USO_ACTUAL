@@ -1,3 +1,4 @@
+//Filtro canciones.h
 #pragma once
 #include <functional>
 #include "Lista.h"
@@ -39,5 +40,27 @@ public:
         return filtrar(lista, [=](Cancion c) {
             return c.getDuracion() > min;
             });
+    }
+
+    //bubblesort
+    static void ordenarPorDuracion(Lista<Cancion>& lista) {
+        int n = lista.longitud();
+
+        for (int i = 0; i < n - 1; i++) {
+            for (int j = 0; j < n - i - 1; j++) {
+
+                Cancion a = lista.obtenerPos(j);
+                Cancion b = lista.obtenerPos(j + 1);
+
+                if (a.getDuracion() > b.getDuracion()) {
+
+                    lista.eliminarEn(j);
+                    lista.insertarEn(b, j);
+
+                    lista.eliminarEn(j + 1);
+                    lista.insertarEn(a, j + 1);
+                }
+            }
+        }
     }
 };
